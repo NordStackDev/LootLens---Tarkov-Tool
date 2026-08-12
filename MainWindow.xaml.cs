@@ -1,26 +1,48 @@
-﻿using System;
+﻿using Lootlens.Data;
+using System;
+using System.Diagnostics;
 using System.Linq;
-using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Text.Json;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Threading;
 
 namespace LootLens;
 
 public partial class MainWindow : Window {
-    private const int HotkeyId = 9000;
+    private const int ToggleOverlayHotkeyId = 9000;
+    private const int ToggleOcrHotkeyId = 9001;
     private const int WmHotkey = 0x0312;
-    private static readonly HttpClient Http = new();
+    private readonly DispatcherTimer _searchDebounceTimer;
+    private readonly DispatcherTimer _ocrTimer;
+    private readonly OcrService _ocrService = new();
+    private Settings _settings = new();
+    private string _lastQuery = string.Empty;
+    private string _lastRecognizedText = string.Empty;
+    private string _lastRecognizedItemName = string.Empty;
+    private int _searchVersion;
+    private bool _ocrInProgress;
 
     public MainWindow() {
         InitializeComponent();
-        Loaded += (_, _) => Hide();          // starter skjult – F6 viser den
+
+        _searchDebounceTimer = new DispatcherTimer {
+            Interval = TimeSpan.FromMilliseconds(300)
+        };
+        _searchDebounceTimer.Tick += SearchDebounceTimer_Tick;
+
+        _ocrTimer = new DispatcherTimer {
+            Interval = TimeSpan.FromMilliseconds(500)
+        };
+        _ocrTimer.Tick += OcrTimer_Tick;
+
+        Loaded += MainWindow_Loaded;
+
     }
 
-    /* ---------- Global hotkey: F6 ---------- */
     [DllImport("user32.dll")]
     private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
 
@@ -30,15 +52,29 @@ public partial class MainWindow : Window {
     protected override void OnSourceInitialized(EventArgs e) {
         base.OnSourceInitialized(e);
         var hwnd = new WindowInteropHelper(this).Handle;
-        RegisterHotKey(hwnd, HotkeyId, 0, 0x75);   // 0x75 = F6
+
+        if (!RegisterHotKey(hwnd, ToggleOverlayHotkeyId, 0, 0x75)) {
+            Debug.WriteLine("Could not register F6 hotkey.");
+        }
+
+        if (!RegisterHotKey(hwnd, ToggleOcrHotkeyId, 0, 0x76)) {
+            Debug.WriteLine("Could not register F7 hotkey.");
+        }
+
         HwndSource.FromHwnd(hwnd)?.AddHook(WndProc);
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled) {
-        if (msg == WmHotkey && wParam.ToInt32() == HotkeyId) {
-            Toggle();
-            handled = true;
+        if (msg == WmHotkey) {
+            if (wParam.ToInt32() == ToggleOverlayHotkeyId) {
+                Toggle();
+                handled = true;
+            } else if (wParam.ToInt32() == ToggleOcrHotkeyId) {
+                _ = ToggleOcrAsync();
+                handled = true;
+            }
         }
+
         return IntPtr.Zero;
     }
 
@@ -52,78 +88,231 @@ public partial class MainWindow : Window {
     }
 
     protected override void OnClosed(EventArgs e) {
-        UnregisterHotKey(new WindowInteropHelper(this).Handle, HotkeyId);
+        var hwnd = new WindowInteropHelper(this).Handle;
+        UnregisterHotKey(hwnd, ToggleOverlayHotkeyId);
+        UnregisterHotKey(hwnd, ToggleOcrHotkeyId);
+
+        _ocrTimer.Stop();
         base.OnClosed(e);
     }
 
-    /* ---------- Søgning mod tarkov.dev ---------- */
+    private async void MainWindow_Loaded(object sender, RoutedEventArgs e) {
+        _settings = await Settings.LoadAsync();
+        _settings.Normalize();
+        UpdateInventoryValuePollingState();
+    }
+
     private async void SearchBox_KeyDown(object sender, KeyEventArgs e) {
         if (e.Key == Key.Escape) { Hide(); return; }
         if (e.Key != Key.Enter) return;
 
-        var name = SearchBox.Text.Trim();
-        if (name.Length == 0) return;
+        _searchDebounceTimer.Stop();
+        await SearchAndRenderAsync(SearchBox.Text.Trim());
+    }
+
+    private void SearchBox_TextChanged(object sender, TextChangedEventArgs e) {
+        var query = SearchBox.Text.Trim();
+
+        if (query.Length == 0) {
+            _searchDebounceTimer.Stop();
+            _lastQuery = string.Empty;
+            ResultText.Text = string.Empty;
+            return;
+        }
+
+        ResultText.Text = "Søger…";
+        _searchDebounceTimer.Stop();
+        _searchDebounceTimer.Start();
+    }
+
+    private async void SearchDebounceTimer_Tick(object? sender, EventArgs e) {
+        _searchDebounceTimer.Stop();
+        await SearchAndRenderAsync(SearchBox.Text.Trim());
+    }
+
+    private async Task SearchAndRenderAsync(string name) {
+        if (name.Length == 0)
+            return;
+
+        if (string.Equals(name, _lastQuery, StringComparison.OrdinalIgnoreCase)) return;
+
+        var currentVersion = ++_searchVersion;
 
         ResultText.Text = "Søger…";
 
         try {
-            var query = """
-            {
-              itemsByName(name: "NAME") {
-                name
-                avg24hPrice
-                low24hPrice
-                high24hPrice
-                sellFor { source price }
-              }
+            var items = await ItemCache.SearchItems(name);
+
+            if (currentVersion != _searchVersion)
+                return;
+
+            var item = items.FirstOrDefault(i =>
+                i.name.Contains(name, StringComparison.OrdinalIgnoreCase) ||
+                i.shortName.Contains(name, StringComparison.OrdinalIgnoreCase));
+
+            if (item == null) {
+                ResultText.Text = "Intet fundet for: " + name;
+                return;
             }
-            """.Replace("NAME", name.Replace("\"", "\\\""));
 
-            using var resp = await Http.PostAsync(
-                "https://api.tarkov.dev/graphql",
-                new StringContent(JsonSerializer.Serialize(new { query }),
-                                  Encoding.UTF8, "application/json"));
-            resp.EnsureSuccessStatusCode();
-
-            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
-            var item = doc.RootElement
-                .GetProperty("data").GetProperty("itemsByName")
-                .EnumerateArray().FirstOrDefault();
-
-            ResultText.Text = item.ValueKind == JsonValueKind.Undefined
-                ? "Intet fundet for: " + name
-                : FormatItem(item);
+            _lastQuery = name;
+            ResultText.Text = FormatItem(item, _settings);
         } catch (Exception ex) {
+            if (currentVersion != _searchVersion)
+                return;
+
             ResultText.Text = "Fejl: " + ex.Message;
         }
     }
 
-    private static string FormatItem(JsonElement item) {
+    private static string FormatItem(ItemCache.Item item, Settings settings) {
         var sb = new StringBuilder();
-        sb.AppendLine(item.GetProperty("name").GetString() ?? "?");
+        sb.AppendLine(item.name);
         sb.AppendLine();
-        sb.AppendLine($"Flea 24h: avg {Fmt(GetLong(item, "avg24hPrice"))} · " +
-                      $"low {Fmt(GetLong(item, "low24hPrice"))} · " +
-                      $"high {Fmt(GetLong(item, "high24hPrice"))}");
-        sb.AppendLine();
-        sb.AppendLine("Bedste salg:");
 
-        var offers = item.GetProperty("sellFor").EnumerateArray()
-            .Select(o => (Source: o.GetProperty("source").GetString() ?? "?",
-                          Price: GetLong(o, "price")))
-            .Where(o => o.Price > 0)
-            .OrderByDescending(o => o.Price)
-            .Take(3);
+        if (settings.ShowFleaPrice) {
+            sb.AppendLine($"Flea 24h: avg {Fmt(item.avg24hPrice)} · " +
+                          $"low {Fmt(item.low24hPrice)} · " +
+                          $"high {Fmt(item.high24hPrice)}");
+            sb.AppendLine();
+        }
 
-        foreach (var (source, price) in offers)
-            sb.AppendLine($"   {source}: {Fmt(price)} ₽");
+        var traderOffers = Enumerable.Empty<ItemCache.SellFor>();
+
+        if (item.sellFor != null) {
+            traderOffers = item.sellFor
+                .Where(o => !string.Equals(o.source, "Flea Market", StringComparison.OrdinalIgnoreCase))
+                .Where(o => o.price > 0)
+                .OrderByDescending(o => o.price)
+                .Take(3);
+        }
+
+        if (settings.ShowTraderPrice) {
+            sb.AppendLine("Bedste salg:");
+            foreach (var offer in traderOffers)
+                sb.AppendLine($"   {offer.source}: {Fmt(offer.price)} ₽");
+
+            sb.AppendLine();
+        }
+
+        if (settings.ShowProfit) {
+            var bestTrader = traderOffers.FirstOrDefault();
+            if (bestTrader != null && item.avg24hPrice > 0) {
+                var profit = bestTrader.price - item.avg24hPrice;
+                sb.AppendLine($"Profit vs avg flea: {Fmt(profit)} ₽");
+            }
+        }
 
         return sb.ToString();
     }
 
-    private static long GetLong(JsonElement el, string prop)
-        => el.TryGetProperty(prop, out var p) && p.ValueKind == JsonValueKind.Number
-            ? p.GetInt64() : 0;
-
     private static string Fmt(long v) => v == 0 ? "–" : v.ToString("N0");
+
+    private void HeaderBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) {
+        if (e.OriginalSource is DependencyObject source) {
+            var parentButton = FindAncestor<System.Windows.Controls.Primitives.ButtonBase>(source);
+            if (parentButton != null) return;
+        }
+
+        DragMove();
+    }
+
+    private void CloseButton_Click(object sender, RoutedEventArgs e) {
+        System.Windows.Application.Current.Shutdown();
+    }
+
+    private void HelpButton_Click(object sender, RoutedEventArgs e) {
+        System.Windows.MessageBox.Show(
+            "F6 = vis/skjul\n" +
+            "F7 = Inventory Value til/fra\n" +
+            "Skriv = live-søg\n" +
+            "Enter = søg nu\n" +
+            "Esc = skjul\n" +
+            "✕ = luk\n\n" +
+            "Data: json.tarkov.dev (regular/items.json)",
+            "LootLens hjælp",
+            MessageBoxButton.OK,
+            MessageBoxImage.Information);
+
+        e.Handled = true;
+    }
+
+    private static T? FindAncestor<T>(DependencyObject? current) where T : DependencyObject {
+        while (current != null) {
+            if (current is T typed)
+                return typed;
+
+            current = System.Windows.Media.VisualTreeHelper.GetParent(current);
+        }
+
+        return null;
+    }
+
+    private async void OcrTimer_Tick(object? sender, EventArgs e) {
+        if (!_settings.InventoryValueEnabled || _ocrInProgress)
+            return;
+
+        _ocrInProgress = true;
+
+        try {
+            var recognized = await _ocrService.RecognizeAroundCursorAsync(_settings.InventoryRegionWidth, _settings.InventoryRegionHeight);
+            if (string.IsNullOrWhiteSpace(recognized))
+                return;
+
+            if (string.Equals(recognized, _lastRecognizedText, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            _lastRecognizedText = recognized;
+
+            var items = await ItemCache.SearchItems(recognized);
+            var item = items.FirstOrDefault(i =>
+                i.name.Contains(recognized, StringComparison.OrdinalIgnoreCase) ||
+                i.shortName.Contains(recognized, StringComparison.OrdinalIgnoreCase));
+
+            if (item == null)
+                return;
+
+            if (string.Equals(item.name, _lastRecognizedItemName, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            _lastRecognizedItemName = item.name;
+            _lastQuery = recognized;
+            ResultText.Text = FormatItem(item, _settings);
+        } catch (Exception ex) {
+            Debug.WriteLine($"[OCR] Timer tick failed: {ex.Message}");
+        } finally {
+            _ocrInProgress = false;
+        }
+    }
+
+    private async Task ToggleOcrAsync() {
+        _settings.InventoryValueEnabled = !_settings.InventoryValueEnabled;
+        UpdateInventoryValuePollingState();
+        await Settings.SaveAsync(_settings);
+    }
+
+    private void UpdateInventoryValuePollingState() {
+        if (_settings.InventoryValueEnabled) {
+            _lastRecognizedText = string.Empty;
+            _lastRecognizedItemName = string.Empty;
+            _ocrTimer.Start();
+            return;
+        }
+
+        _ocrTimer.Stop();
+    }
+
+    private async void SettingsButton_Click(object sender, RoutedEventArgs e) {
+        var dialog = new SettingsWindow(_settings) {
+            Owner = this
+        };
+
+        if (dialog.ShowDialog() != true)
+            return;
+
+        _settings = dialog.EditableSettings.Clone();
+        _settings.Normalize();
+        UpdateInventoryValuePollingState();
+        await Settings.SaveAsync(_settings);
+    }
 }
