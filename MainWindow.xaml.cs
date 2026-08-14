@@ -6,8 +6,10 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Media;
 using System.Windows.Threading;
 
 namespace LootLens;
@@ -23,6 +25,9 @@ public partial class MainWindow : Window {
     private string _lastQuery = string.Empty;
     private string _lastRecognizedText = string.Empty;
     private string _lastRecognizedItemName = string.Empty;
+    private DateTime _lastValidHoverAt = DateTime.MinValue;
+    private DateTime _tooltipHiddenAt = DateTime.MinValue;
+    private bool _tooltipVisible;
     private int _searchVersion;
     private bool _ocrInProgress;
 
@@ -81,6 +86,7 @@ public partial class MainWindow : Window {
     private void Toggle() {
         if (Visibility == Visibility.Visible) Hide();
         else {
+            PositionWindowNearCursor();
             Show();
             SearchBox.Focus();
             SearchBox.SelectAll();
@@ -110,16 +116,42 @@ public partial class MainWindow : Window {
         await SearchAndRenderAsync(SearchBox.Text.Trim());
     }
 
+    private void PositionWindowNearCursor() {
+        if (!GetCursorPos(out var point))
+            return;
+
+        var workArea = SystemParameters.WorkArea;
+        var popupWidth = (int)Math.Max(ActualWidth, 180);
+        var popupHeight = (int)Math.Max(ActualHeight, 36);
+
+        var left = point.X + 18;
+        var top = point.Y + 18;
+
+        if (left + popupWidth > workArea.Right)
+            left = point.X - popupWidth - 18;
+
+        if (top + popupHeight > workArea.Bottom)
+            top = point.Y - popupHeight - 18;
+
+        var maxLeft = (int)Math.Max(workArea.Left, workArea.Right - popupWidth);
+        var maxTop = (int)Math.Max(workArea.Top, workArea.Bottom - popupHeight);
+
+        Left = Math.Clamp(left, (int)workArea.Left, maxLeft);
+        Top = Math.Clamp(top, (int)workArea.Top, maxTop);
+    }
+
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs e) {
         var query = SearchBox.Text.Trim();
 
         if (query.Length == 0) {
             _searchDebounceTimer.Stop();
             _lastQuery = string.Empty;
-            ResultText.Text = string.Empty;
+            ResultText.Inlines.Clear();
+            HideTooltip();
             return;
         }
 
+        ResultText.Inlines.Clear();
         ResultText.Text = "Søger…";
         _searchDebounceTimer.Stop();
         _searchDebounceTimer.Start();
@@ -138,6 +170,7 @@ public partial class MainWindow : Window {
 
         var currentVersion = ++_searchVersion;
 
+        ResultText.Inlines.Clear();
         ResultText.Text = "Søger…";
 
         try {
@@ -152,29 +185,33 @@ public partial class MainWindow : Window {
 
             if (item == null) {
                 ResultText.Text = "Intet fundet for: " + name;
+                HideTooltip();
                 return;
             }
 
             _lastQuery = name;
-            ResultText.Text = FormatItem(item, _settings);
+            RenderResultText(item, _settings);
+            PositionWindowNearCursor();
+            ShowTooltip();
         } catch (Exception ex) {
             if (currentVersion != _searchVersion)
                 return;
 
             ResultText.Text = "Fejl: " + ex.Message;
+            HideTooltip();
         }
     }
 
-    private static string FormatItem(ItemCache.Item item, Settings settings) {
-        var sb = new StringBuilder();
-        sb.AppendLine(item.name);
-        sb.AppendLine();
+    private void RenderResultText(ItemCache.Item item, Settings settings) {
+        ResultText.Inlines.Clear();
 
-        if (settings.ShowFleaPrice) {
-            sb.AppendLine($"Flea 24h: avg {Fmt(item.avg24hPrice)} · " +
-                          $"low {Fmt(item.low24hPrice)} · " +
-                          $"high {Fmt(item.high24hPrice)}");
-            sb.AppendLine();
+        ResultText.Inlines.Add(new Run(item.name + Environment.NewLine) { Foreground = Brushes.White });
+
+        if (settings.ShowFleaPrice && item.avg24hPrice > 0) {
+            ResultText.Inlines.Add(new Run($"Avg {Fmt(item.avg24hPrice)} ₽") {
+                Foreground = Brushes.LimeGreen
+            });
+            ResultText.Inlines.Add(new Run(Environment.NewLine));
         }
 
         var traderOffers = Enumerable.Empty<ItemCache.SellFor>();
@@ -184,26 +221,28 @@ public partial class MainWindow : Window {
                 .Where(o => !string.Equals(o.source, "Flea Market", StringComparison.OrdinalIgnoreCase))
                 .Where(o => o.price > 0)
                 .OrderByDescending(o => o.price)
-                .Take(3);
+                .Take(2);
         }
 
         if (settings.ShowTraderPrice) {
-            sb.AppendLine("Bedste salg:");
-            foreach (var offer in traderOffers)
-                sb.AppendLine($"   {offer.source}: {Fmt(offer.price)} ₽");
-
-            sb.AppendLine();
+            var bestOffer = traderOffers.FirstOrDefault();
+            if (bestOffer != null) {
+                ResultText.Inlines.Add(new Run($"{bestOffer.source}: {Fmt(bestOffer.price)} ₽") {
+                    Foreground = Brushes.Gold
+                });
+                ResultText.Inlines.Add(new Run(Environment.NewLine));
+            }
         }
 
         if (settings.ShowProfit) {
             var bestTrader = traderOffers.FirstOrDefault();
             if (bestTrader != null && item.avg24hPrice > 0) {
                 var profit = bestTrader.price - item.avg24hPrice;
-                sb.AppendLine($"Profit vs avg flea: {Fmt(profit)} ₽");
+                ResultText.Inlines.Add(new Run($"Profit {Fmt(profit)} ₽") {
+                    Foreground = Brushes.Gold
+                });
             }
         }
-
-        return sb.ToString();
     }
 
     private static string Fmt(long v) => v == 0 ? "–" : v.ToString("N0");
@@ -256,11 +295,20 @@ public partial class MainWindow : Window {
 
         try {
             var recognized = await _ocrService.RecognizeAroundCursorAsync(_settings.InventoryRegionWidth, _settings.InventoryRegionHeight);
-            if (string.IsNullOrWhiteSpace(recognized))
-                return;
+            if (string.IsNullOrWhiteSpace(recognized)) {
+                if (DateTime.UtcNow - _lastValidHoverAt < TimeSpan.FromMilliseconds(400))
+                    return;
 
-            if (string.Equals(recognized, _lastRecognizedText, StringComparison.OrdinalIgnoreCase))
+                SetTooltipVisible(false);
                 return;
+            }
+
+            if (string.Equals(recognized, _lastRecognizedText, StringComparison.OrdinalIgnoreCase)) {
+                if (_tooltipVisible) {
+                    PositionWindowNearCursor();
+                }
+                return;
+            }
 
             _lastRecognizedText = recognized;
 
@@ -269,21 +317,102 @@ public partial class MainWindow : Window {
                 i.name.Contains(recognized, StringComparison.OrdinalIgnoreCase) ||
                 i.shortName.Contains(recognized, StringComparison.OrdinalIgnoreCase));
 
-            if (item == null)
-                return;
+            if (item == null) {
+                if (DateTime.UtcNow - _lastValidHoverAt < TimeSpan.FromMilliseconds(400))
+                    return;
 
-            if (string.Equals(item.name, _lastRecognizedItemName, StringComparison.OrdinalIgnoreCase))
+                SetTooltipVisible(false);
                 return;
+            }
+
+            if (string.Equals(item.name, _lastRecognizedItemName, StringComparison.OrdinalIgnoreCase)) {
+                PositionWindowNearCursor();
+                SetTooltipVisible(true);
+                return;
+            }
 
             _lastRecognizedItemName = item.name;
+            _lastValidHoverAt = DateTime.UtcNow;
             _lastQuery = recognized;
-            ResultText.Text = FormatItem(item, _settings);
+            RenderResultText(item, _settings);
+            PositionWindowNearCursor();
+            SetTooltipVisible(true);
         } catch (Exception ex) {
             Debug.WriteLine($"[OCR] Timer tick failed: {ex.Message}");
+            SetTooltipVisible(false);
         } finally {
             _ocrInProgress = false;
         }
     }
+
+    [DllImport("user32.dll")]
+    private static extern bool GetCursorPos(out POINT lpPoint);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct POINT {
+        public int X;
+        public int Y;
+    }
+
+    private void SetTooltipVisible(bool visible) {
+        if (visible) {
+            _tooltipHiddenAt = DateTime.MinValue;
+            if (_tooltipVisible && Visibility == Visibility.Visible && Opacity >= 0.9)
+                return;
+
+            BeginAnimation(OpacityProperty, null);
+            Visibility = Visibility.Visible;
+            Opacity = 0;
+            _tooltipVisible = true;
+
+            var showAnimation = new System.Windows.Media.Animation.DoubleAnimation {
+                From = 0,
+                To = 0.98,
+                Duration = TimeSpan.FromMilliseconds(150),
+                FillBehavior = System.Windows.Media.Animation.FillBehavior.Stop
+            };
+
+            showAnimation.Completed += (_, __) => {
+                if (_tooltipVisible)
+                    Opacity = 0.98;
+            };
+
+            BeginAnimation(OpacityProperty, showAnimation);
+            return;
+        }
+
+        if (!_tooltipVisible || Visibility != Visibility.Visible)
+            return;
+
+        if (_tooltipHiddenAt == DateTime.MinValue)
+            _tooltipHiddenAt = DateTime.UtcNow;
+
+        if (DateTime.UtcNow - _tooltipHiddenAt < TimeSpan.FromMilliseconds(220))
+            return;
+
+        BeginAnimation(OpacityProperty, null);
+        _tooltipVisible = false;
+
+        var hideAnimation = new System.Windows.Media.Animation.DoubleAnimation {
+            From = Opacity,
+            To = 0,
+            Duration = TimeSpan.FromMilliseconds(120),
+            FillBehavior = System.Windows.Media.Animation.FillBehavior.Stop
+        };
+
+        hideAnimation.Completed += (_, __) => {
+            if (!_tooltipVisible) {
+                Visibility = Visibility.Hidden;
+                Opacity = 0;
+            }
+        };
+
+        BeginAnimation(OpacityProperty, hideAnimation);
+    }
+
+    private void ShowTooltip() => SetTooltipVisible(true);
+
+    private void HideTooltip() => SetTooltipVisible(false);
 
     private async Task ToggleOcrAsync() {
         _settings.InventoryValueEnabled = !_settings.InventoryValueEnabled;
