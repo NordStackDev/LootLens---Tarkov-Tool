@@ -1,0 +1,219 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Threading.Tasks;
+
+namespace Lootlens.Data;
+
+public static class ItemCache {
+    private static readonly HttpClientHandler _handler = new() {
+        AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
+        UseProxy = true,
+        Proxy = HttpClient.DefaultProxy
+    };
+
+    private static readonly HttpClient _client = new(_handler) {
+        Timeout = TimeSpan.FromSeconds(30)
+    };
+
+    private static List<Item> _cache = new();
+    private static DateTime _lastFetch = DateTime.MinValue;
+    private const int CacheDurationMinutes = 60;
+    private const int MaxRetries = 3;
+
+    static ItemCache() {
+        _client.DefaultRequestHeaders.Add("User-Agent", "LootLens/1.0 (WPF Application)");
+        _client.DefaultRequestHeaders.Add("Accept", "application/json");
+        Debug.WriteLine("[ItemCache] Initialized with GraphQL API support");
+    }
+
+    public class Item {
+        [JsonPropertyName("id")]
+        public string id { get; set; } = string.Empty;
+
+        [JsonPropertyName("name")]
+        public string name { get; set; } = string.Empty;
+
+        [JsonPropertyName("shortName")]
+        public string shortName { get; set; } = string.Empty;
+
+        [JsonPropertyName("avg24hPrice")]
+        public long avg24hPrice { get; set; }
+
+        [JsonPropertyName("low24hPrice")]
+        public long low24hPrice { get; set; }
+
+        [JsonPropertyName("high24hPrice")]
+        public long high24hPrice { get; set; }
+
+        [JsonPropertyName("sellFor")]
+        public List<SellFor>? sellFor { get; set; }
+    }
+
+    public class SellFor {
+        [JsonPropertyName("source")]
+        public string source { get; set; } = string.Empty;
+
+        [JsonPropertyName("price")]
+        public long price { get; set; }
+    }
+
+    public static async Task<List<Item>> SearchItems(string query) {
+        await EnsureCacheLoaded();
+
+        if (string.IsNullOrWhiteSpace(query))
+            return _cache;
+
+        var results = new List<Item>();
+
+        foreach (var item in _cache) {
+            if (item.name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                item.shortName.Contains(query, StringComparison.OrdinalIgnoreCase)) {
+                results.Add(item);
+            }
+        }
+
+        return results;
+    }
+
+    private static async Task EnsureCacheLoaded() {
+        if (_cache.Count > 0 && DateTime.UtcNow - _lastFetch < TimeSpan.FromMinutes(CacheDurationMinutes))
+            return;
+
+        await LoadItemsFromApi();
+    }
+
+    private static async Task LoadItemsFromApi() {
+        int retryCount = 0;
+        Exception? lastException = null;
+        const string apiUrl = "https://api.tarkov.dev/graphql";
+
+        // GraphQL query to fetch items
+        var graphqlQuery = new {
+            query = @"
+                query {
+                    items {
+                        id
+                        name
+                        shortName
+                        avg24hPrice
+                        low24hPrice
+                        high24hPrice
+                        sellFor {
+                            source
+                            price
+                        }
+                    }
+                }
+            "
+        };
+
+        var jsonContent = JsonSerializer.Serialize(graphqlQuery);
+
+        while (retryCount < MaxRetries) {
+            try {
+                Debug.WriteLine($"[ItemCache] Attempting to fetch items from GraphQL API (attempt {retryCount + 1}/{MaxRetries})");
+                Debug.WriteLine($"[ItemCache] URL: {apiUrl}");
+                Debug.WriteLine($"[ItemCache] Using proxy: {_handler.UseProxy}");
+
+                var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+                var response = await _client.PostAsync(apiUrl, content);
+
+                if (!response.IsSuccessStatusCode) {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    Debug.WriteLine($"[ItemCache] ✗ HTTP {(int)response.StatusCode}: {errorContent}");
+                    throw new HttpRequestException($"API returned {response.StatusCode}: {errorContent}");
+                }
+
+                var responseString = await response.Content.ReadAsStringAsync();
+                Debug.WriteLine($"[ItemCache] Response received, size: {responseString.Length} bytes");
+
+                // Parse GraphQL response
+                using var jsonDoc = JsonDocument.Parse(responseString);
+                var root = jsonDoc.RootElement;
+
+                if (root.TryGetProperty("errors", out var errors) && errors.GetArrayLength() > 0) {
+                    var errorMsg = errors[0].GetProperty("message").GetString() ?? "Unknown error";
+                    Debug.WriteLine($"[ItemCache] ✗ GraphQL error: {errorMsg}");
+                    throw new InvalidOperationException($"GraphQL error: {errorMsg}");
+                }
+
+                if (!root.TryGetProperty("data", out var data)) {
+                    Debug.WriteLine("[ItemCache] ✗ No 'data' field in GraphQL response");
+                    throw new InvalidOperationException("Invalid GraphQL response structure");
+                }
+
+                if (!data.TryGetProperty("items", out var itemsArray)) {
+                    Debug.WriteLine("[ItemCache] ✗ No 'items' field in GraphQL data");
+                    throw new InvalidOperationException("Invalid GraphQL response: missing items");
+                }
+
+                var items = JsonSerializer.Deserialize<List<Item>>(itemsArray.GetRawText());
+
+                _cache.Clear();
+                if (items != null && items.Count > 0) {
+                    _cache.AddRange(items);
+                    _lastFetch = DateTime.UtcNow;
+                    Debug.WriteLine($"[ItemCache] ✓ Successfully loaded {_cache.Count} items from GraphQL API");
+                    return;
+                }
+                else {
+                    Debug.WriteLine("[ItemCache] ✗ No items in GraphQL response");
+                }
+            } catch (HttpRequestException ex) {
+                lastException = ex;
+                Debug.WriteLine($"[ItemCache] ✗ Network error on attempt {retryCount + 1}: {ex.Message}");
+                retryCount++;
+                if (retryCount < MaxRetries) {
+                    var delayMs = 1000 * retryCount;
+                    Debug.WriteLine($"[ItemCache] Retrying in {delayMs}ms...");
+                    await Task.Delay(delayMs);
+                }
+            } catch (TaskCanceledException ex) {
+                lastException = ex;
+                Debug.WriteLine($"[ItemCache] ✗ Timeout on attempt {retryCount + 1} after 30 seconds");
+                retryCount++;
+                if (retryCount < MaxRetries) {
+                    var delayMs = 1000 * retryCount;
+                    Debug.WriteLine($"[ItemCache] Retrying in {delayMs}ms...");
+                    await Task.Delay(delayMs);
+                }
+            } catch (JsonException ex) {
+                Debug.WriteLine($"[ItemCache] ✗ JSON parsing error: {ex.Message}");
+                throw new InvalidOperationException("Failed to parse API response. The API format may have changed.", ex);
+            } catch (Exception ex) {
+                Debug.WriteLine($"[ItemCache] ✗ Unexpected error: {ex.GetType().Name}: {ex.Message}");
+                if (retryCount < MaxRetries - 1) {
+                    lastException = ex;
+                    retryCount++;
+                    var delayMs = 1000 * retryCount;
+                    Debug.WriteLine($"[ItemCache] Retrying in {delayMs}ms...");
+                    await Task.Delay(delayMs);
+                } else {
+                    throw;
+                }
+            }
+        }
+
+        // If we have cached data, use it even if it's old
+        if (_cache.Count > 0) {
+            Debug.WriteLine($"[ItemCache] API failed after {MaxRetries} attempts. Using cached data ({_cache.Count} items)");
+            return;
+        }
+
+        // No cache available - throw error
+        Debug.WriteLine($"[ItemCache] ✗ Failed to load items from API and no cache available");
+        if (lastException != null) {
+            throw new InvalidOperationException(
+                "Failed to connect to Tarkov API after multiple attempts. The server may be down or you may not have internet connection. Please try again later.", 
+                lastException);
+        }
+        throw new InvalidOperationException("Unable to load items from API and no cached data available.");
+    }
+}

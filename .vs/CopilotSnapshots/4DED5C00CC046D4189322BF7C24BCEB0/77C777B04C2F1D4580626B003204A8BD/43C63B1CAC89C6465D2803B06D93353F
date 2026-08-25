@@ -1,0 +1,131 @@
+﻿using System;
+using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using Windows.Graphics.Imaging;
+using Windows.Media.Ocr;
+using Windows.Storage.Streams;
+
+namespace Lootlens;
+
+public sealed class OcrService {
+    private readonly OcrEngine? _engine;
+
+    public OcrService() {
+        try {
+            _engine = OcrEngine.TryCreateFromUserProfileLanguages();
+        } catch (Exception ex) {
+            Debug.WriteLine($"[OCR] Failed to initialize OcrEngine: {ex.Message}");
+            _engine = null;
+        }
+    }
+
+    public async Task<string?> RecognizeAroundCursorAsync(int regionWidth, int regionHeight, CancellationToken cancellationToken = default) {
+        if (_engine is null)
+            return null;
+
+        if (regionWidth <= 0 || regionHeight <= 0)
+            return null;
+
+        try {
+            var rect = GetCaptureRegion(regionWidth, regionHeight);
+
+            using var bitmap = new Bitmap(rect.Width, rect.Height, PixelFormat.Format32bppPArgb);
+            using (var graphics = Graphics.FromImage(bitmap)) {
+                graphics.CopyFromScreen(rect.Left, rect.Top, 0, 0, rect.Size, CopyPixelOperation.SourceCopy);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            using var softwareBitmap = ConvertToSoftwareBitmap(bitmap);
+            var result = await _engine.RecognizeAsync(softwareBitmap).AsTask(cancellationToken);
+
+            var text = NormalizeText(result.Text);
+            return string.IsNullOrWhiteSpace(text) ? null : text;
+        } catch (OperationCanceledException) {
+            return null;
+        } catch (Exception ex) {
+            Debug.WriteLine($"[OCR] Recognition failed: {ex.Message}");
+            return null;
+        }
+    }
+
+    private static Rectangle GetCaptureRegion(int width, int height) {
+        if (!GetCursorPos(out var cursor))
+            return new Rectangle(0, 0, width, height);
+
+        var left = cursor.X - (width / 2);
+        var top = cursor.Y - (height / 2);
+
+        return new Rectangle(left, top, width, height);
+    }
+
+    private static SoftwareBitmap ConvertToSoftwareBitmap(Bitmap bitmap) {
+        var rect = new Rectangle(0, 0, bitmap.Width, bitmap.Height);
+        var data = bitmap.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format32bppPArgb);
+
+        try {
+            var sourceStride = data.Stride;
+            var width = bitmap.Width;
+            var height = bitmap.Height;
+            var targetStride = width * 4;
+            var buffer = new byte[targetStride * height];
+
+            if (sourceStride == targetStride) {
+                Marshal.Copy(data.Scan0, buffer, 0, buffer.Length);
+            } else {
+                var row = new byte[Math.Abs(sourceStride)];
+                for (var y = 0; y < height; y++) {
+                    var sourcePtr = IntPtr.Add(data.Scan0, y * sourceStride);
+                    Marshal.Copy(sourcePtr, row, 0, row.Length);
+                    System.Buffer.BlockCopy(row, 0, buffer, y * targetStride, targetStride);
+                }
+            }
+
+            using var writer = new DataWriter();
+            writer.WriteBytes(buffer);
+            var ibuffer = writer.DetachBuffer();
+
+            return SoftwareBitmap.CreateCopyFromBuffer(
+                ibuffer,
+                BitmapPixelFormat.Bgra8,
+                width,
+                height,
+                BitmapAlphaMode.Premultiplied);
+        } finally {
+            bitmap.UnlockBits(data);
+        }
+    }
+
+    private static string NormalizeText(string? text) {
+        if (string.IsNullOrWhiteSpace(text))
+            return string.Empty;
+
+        var builder = new StringBuilder(text.Length);
+        foreach (var c in text) {
+            if (char.IsControl(c))
+                continue;
+
+            builder.Append(c);
+        }
+
+        return builder
+            .ToString()
+            .Replace('\r', ' ')
+            .Replace('\n', ' ')
+            .Trim();
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool GetCursorPos(out POINT lpPoint);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct POINT {
+        public int X;
+        public int Y;
+    }
+}

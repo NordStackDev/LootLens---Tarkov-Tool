@@ -1,0 +1,133 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\Udvikling\\unifiedsales\\LootLens---Tarkov-Tool\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{9F862F39-B788-4125-3060-7ABB936AD144}|Lootlens.csproj|c:\\udvikling\\unifiedsales\\lootlens---tarkov-tool\\settingswindow.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{9F862F39-B788-4125-3060-7ABB936AD144}|Lootlens.csproj|solutionrelative:settingswindow.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{9F862F39-B788-4125-3060-7ABB936AD144}|Lootlens.csproj|c:\\udvikling\\unifiedsales\\lootlens---tarkov-tool\\settingswindow.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}",
+      "RelativeMoniker": "D:0:0:{9F862F39-B788-4125-3060-7ABB936AD144}|Lootlens.csproj|solutionrelative:settingswindow.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{9F862F39-B788-4125-3060-7ABB936AD144}|Lootlens.csproj|c:\\udvikling\\unifiedsales\\lootlens---tarkov-tool\\mainwindow.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}",
+      "RelativeMoniker": "D:0:0:{9F862F39-B788-4125-3060-7ABB936AD144}|Lootlens.csproj|solutionrelative:mainwindow.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{9F862F39-B788-4125-3060-7ABB936AD144}|Lootlens.csproj|c:\\udvikling\\unifiedsales\\lootlens---tarkov-tool\\mainwindow.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{9F862F39-B788-4125-3060-7ABB936AD144}|Lootlens.csproj|solutionrelative:mainwindow.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{9F862F39-B788-4125-3060-7ABB936AD144}|Lootlens.csproj|c:\\udvikling\\unifiedsales\\lootlens---tarkov-tool\\data\\itemcache.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{9F862F39-B788-4125-3060-7ABB936AD144}|Lootlens.csproj|solutionrelative:data\\itemcache.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{9F862F39-B788-4125-3060-7ABB936AD144}|Lootlens.csproj|c:\\udvikling\\unifiedsales\\lootlens---tarkov-tool\\settings.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{9F862F39-B788-4125-3060-7ABB936AD144}|Lootlens.csproj|solutionrelative:settings.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{9F862F39-B788-4125-3060-7ABB936AD144}|Lootlens.csproj|c:\\udvikling\\unifiedsales\\lootlens---tarkov-tool\\ocrservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{9F862F39-B788-4125-3060-7ABB936AD144}|Lootlens.csproj|solutionrelative:ocrservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 2,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "SettingsWindow.xaml",
+              "DocumentMoniker": "C:\\Udvikling\\unifiedsales\\LootLens---Tarkov-Tool\\SettingsWindow.xaml",
+              "RelativeDocumentMoniker": "SettingsWindow.xaml",
+              "ToolTip": "C:\\Udvikling\\unifiedsales\\LootLens---Tarkov-Tool\\SettingsWindow.xaml",
+              "RelativeToolTip": "SettingsWindow.xaml",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003549|",
+              "WhenOpened": "2026-08-12T21:11:40.472Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "MainWindow.xaml",
+              "DocumentMoniker": "C:\\Udvikling\\unifiedsales\\LootLens---Tarkov-Tool\\MainWindow.xaml",
+              "RelativeDocumentMoniker": "MainWindow.xaml",
+              "ToolTip": "C:\\Udvikling\\unifiedsales\\LootLens---Tarkov-Tool\\MainWindow.xaml",
+              "RelativeToolTip": "MainWindow.xaml",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003549|",
+              "WhenOpened": "2026-08-12T21:11:39.486Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "SettingsWindow.xaml.cs",
+              "DocumentMoniker": "C:\\Udvikling\\unifiedsales\\LootLens---Tarkov-Tool\\SettingsWindow.xaml.cs",
+              "RelativeDocumentMoniker": "SettingsWindow.xaml.cs",
+              "ToolTip": "C:\\Udvikling\\unifiedsales\\LootLens---Tarkov-Tool\\SettingsWindow.xaml.cs",
+              "RelativeToolTip": "SettingsWindow.xaml.cs",
+              "ViewState": "AgIAAAYAAAAAAAAAAAAAAB4AAAAFAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-08-12T21:08:48.502Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 6,
+              "Title": "OcrService.cs",
+              "DocumentMoniker": "C:\\Udvikling\\unifiedsales\\LootLens---Tarkov-Tool\\OcrService.cs",
+              "RelativeDocumentMoniker": "OcrService.cs",
+              "ToolTip": "C:\\Udvikling\\unifiedsales\\LootLens---Tarkov-Tool\\OcrService.cs",
+              "RelativeToolTip": "OcrService.cs",
+              "ViewState": "AgIAAAkAAAAAAAAAAABRwAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-08-12T21:08:48.388Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "Settings.cs",
+              "DocumentMoniker": "C:\\Udvikling\\unifiedsales\\LootLens---Tarkov-Tool\\Settings.cs",
+              "RelativeDocumentMoniker": "Settings.cs",
+              "ToolTip": "C:\\Udvikling\\unifiedsales\\LootLens---Tarkov-Tool\\Settings.cs",
+              "RelativeToolTip": "Settings.cs",
+              "ViewState": "AgIAAAIAAAAAAAAAAABRwAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-08-12T21:08:37.847Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "ItemCache.cs",
+              "DocumentMoniker": "C:\\Udvikling\\unifiedsales\\LootLens---Tarkov-Tool\\Data\\ItemCache.cs",
+              "RelativeDocumentMoniker": "Data\\ItemCache.cs",
+              "ToolTip": "C:\\Udvikling\\unifiedsales\\LootLens---Tarkov-Tool\\Data\\ItemCache.cs",
+              "RelativeToolTip": "Data\\ItemCache.cs",
+              "ViewState": "AgIAAAIAAAAAAAAAAIBJwBMBAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-08-12T21:03:34.95Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "MainWindow.xaml.cs",
+              "DocumentMoniker": "C:\\Udvikling\\unifiedsales\\LootLens---Tarkov-Tool\\MainWindow.xaml.cs",
+              "RelativeDocumentMoniker": "MainWindow.xaml.cs",
+              "ToolTip": "C:\\Udvikling\\unifiedsales\\LootLens---Tarkov-Tool\\MainWindow.xaml.cs",
+              "RelativeToolTip": "MainWindow.xaml.cs",
+              "ViewState": "AgIAABcAAAAAAAAAAAAQwBQAAAA0AAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-08-12T21:03:12.255Z"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

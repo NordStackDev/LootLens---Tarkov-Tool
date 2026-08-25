@@ -1,0 +1,106 @@
+﻿<Window x:Class="Lootlens.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="LootLens Settings"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Width="380"
+        Height="340"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+    <Border Background="#E6141419" CornerRadius="12" Padding="16"
+            BorderBrush="#337a7aff" BorderThickness="1">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <Grid Grid.Row="0" Margin="0,0,0,12" Background="Transparent"
+                  MouseLeftButtonDown="Header_MouseLeftButtonDown" Cursor="SizeAll">
+                <TextBlock Text="? LootLens Settings"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           Foreground="#7a7aff"/>
+                <Button Content="?"
+                        HorizontalAlignment="Right"
+                        Width="24"
+                        Height="24"
+                        Background="Transparent"
+                        Foreground="#666670"
+                        BorderThickness="0"
+                        Cursor="Hand"
+                        Click="CloseButton_Click"/>
+            </Grid>
+
+            <StackPanel Grid.Row="1">
+                <CheckBox x:Name="InventoryValueEnabledCheckBox"
+                          Content="Inventory Value"
+                          Foreground="White"
+                          Margin="0,0,0,8"/>
+
+                <TextBlock Text="View Trader and Flea Market pricing for all items in real-time"
+                           Foreground="#AAB3FF"
+                           Margin="0,0,0,14"
+                           TextWrapping="Wrap"/>
+
+                <CheckBox x:Name="ShowFleaPriceCheckBox"
+                          Content="Show flea price"
+                          Foreground="White"
+                          Margin="0,0,0,8"/>
+
+                <CheckBox x:Name="ShowTraderPriceCheckBox"
+                          Content="Show trader prices"
+                          Foreground="White"
+                          Margin="0,0,0,8"/>
+
+                <CheckBox x:Name="ShowProfitCheckBox"
+                          Content="Show profit"
+                          Foreground="White"
+                          Margin="0,0,0,14"/>
+
+                <TextBlock Text="Inventory detection region around cursor (pixels)"
+                           Foreground="#AAB3FF"
+                           Margin="0,0,0,6"/>
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="12"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="Width" Foreground="White" Margin="0,0,0,4"/>
+                        <TextBox x:Name="RegionWidthBox"
+                                 Background="#222228"
+                                 Foreground="White"
+                                 BorderBrush="#3a3a44"
+                                 Padding="8,6"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="Height" Foreground="White" Margin="0,0,0,4"/>
+                        <TextBox x:Name="RegionHeightBox"
+                                 Background="#222228"
+                                 Foreground="White"
+                                 BorderBrush="#3a3a44"
+                                 Padding="8,6"/>
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+
+            <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+                <Button Content="Cancel" Width="90" Height="30" Margin="0,0,8,0"
+                        Background="#22343A52" Foreground="#AAB3FF" BorderBrush="#557a7aff"
+                        BorderThickness="1" Cursor="Hand" Click="CancelButton_Click"/>
+                <Button Content="Save" Width="90" Height="30"
+                        Background="#7a7aff" Foreground="White" BorderThickness="0"
+                        Cursor="Hand" Click="SaveButton_Click"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

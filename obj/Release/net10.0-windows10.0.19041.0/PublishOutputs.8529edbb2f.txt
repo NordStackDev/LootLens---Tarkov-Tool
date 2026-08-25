@@ -1,0 +1,7 @@
+C:\Users\emilm\Documents\lootlens\Lootlens.exe
+C:\Users\emilm\Documents\lootlens\Lootlens.dll
+C:\Users\emilm\Documents\lootlens\Lootlens.deps.json
+C:\Users\emilm\Documents\lootlens\Lootlens.runtimeconfig.json
+C:\Users\emilm\Documents\lootlens\Lootlens.pdb
+C:\Users\emilm\Documents\lootlens\Microsoft.Windows.SDK.NET.dll
+C:\Users\emilm\Documents\lootlens\WinRT.Runtime.dll

@@ -1,9 +1,8 @@
 using System;
-using System.Globalization;
 using System.Windows;
 using System.Windows.Input;
 
-namespace LootLens;
+namespace Lootlens;
 
 public partial class SettingsWindow : Window {
     public SettingsWindow(Settings settings) {
@@ -15,8 +14,6 @@ public partial class SettingsWindow : Window {
         ShowFleaPriceCheckBox.IsChecked = EditableSettings.ShowFleaPrice;
         ShowTraderPriceCheckBox.IsChecked = EditableSettings.ShowTraderPrice;
         ShowProfitCheckBox.IsChecked = EditableSettings.ShowProfit;
-        RegionWidthBox.Text = EditableSettings.InventoryRegionWidth.ToString(CultureInfo.InvariantCulture);
-        RegionHeightBox.Text = EditableSettings.InventoryRegionHeight.ToString(CultureInfo.InvariantCulture);
     }
 
     public Settings EditableSettings { get; }
@@ -36,22 +33,10 @@ public partial class SettingsWindow : Window {
     }
 
     private void SaveButton_Click(object sender, RoutedEventArgs e) {
-        if (!int.TryParse(RegionWidthBox.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var width) ||
-            !int.TryParse(RegionHeightBox.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var height)) {
-            System.Windows.MessageBox.Show(this,
-                "OCR region width/height must be valid numbers.",
-                "Invalid settings",
-                System.Windows.MessageBoxButton.OK,
-                System.Windows.MessageBoxImage.Warning);
-            return;
-        }
-
         EditableSettings.InventoryValueEnabled = InventoryValueEnabledCheckBox.IsChecked == true;
         EditableSettings.ShowFleaPrice = ShowFleaPriceCheckBox.IsChecked == true;
         EditableSettings.ShowTraderPrice = ShowTraderPriceCheckBox.IsChecked == true;
         EditableSettings.ShowProfit = ShowProfitCheckBox.IsChecked == true;
-        EditableSettings.InventoryRegionWidth = width;
-        EditableSettings.InventoryRegionHeight = height;
         EditableSettings.Normalize();
 
         DialogResult = true;

@@ -3,7 +3,7 @@ using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
 
-namespace LootLens;
+namespace Lootlens;
 
 public sealed class Settings {
     private static readonly JsonSerializerOptions JsonOptions = new() {

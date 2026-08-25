@@ -1,0 +1,163 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Net;
+using System.Net.Http;
+using System.Text.Json.Serialization;
+using System.Threading.Tasks;
+
+namespace Lootlens.Data;
+
+public static class ItemCache {
+    private static readonly HttpClientHandler _handler = new() {
+        AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
+        UseProxy = true,
+        Proxy = HttpClient.DefaultProxy
+    };
+
+    private static readonly HttpClient _client = new(_handler) {
+        Timeout = TimeSpan.FromSeconds(30)
+    };
+
+    private static List<Item> _cache = new();
+    private static DateTime _lastFetch = DateTime.MinValue;
+    private const int CacheDurationMinutes = 60;
+    private const int MaxRetries = 3;
+
+    static ItemCache() {
+        // Add User-Agent header
+        _client.DefaultRequestHeaders.Add("User-Agent", "LootLens/1.0 (WPF Application)");
+        Debug.WriteLine("[ItemCache] Initialized with proxy support and User-Agent header");
+    }
+
+    public class Item {
+        [JsonPropertyName("id")]
+        public string id { get; set; } = string.Empty;
+
+        [JsonPropertyName("name")]
+        public string name { get; set; } = string.Empty;
+
+        [JsonPropertyName("shortName")]
+        public string shortName { get; set; } = string.Empty;
+
+        [JsonPropertyName("avg24hPrice")]
+        public long avg24hPrice { get; set; }
+
+        [JsonPropertyName("low24hPrice")]
+        public long low24hPrice { get; set; }
+
+        [JsonPropertyName("high24hPrice")]
+        public long high24hPrice { get; set; }
+
+        [JsonPropertyName("sellFor")]
+        public List<SellFor>? sellFor { get; set; }
+    }
+
+    public class SellFor {
+        [JsonPropertyName("source")]
+        public string source { get; set; } = string.Empty;
+
+        [JsonPropertyName("price")]
+        public long price { get; set; }
+    }
+
+    public static async Task<List<Item>> SearchItems(string query) {
+        await EnsureCacheLoaded();
+
+        if (string.IsNullOrWhiteSpace(query))
+            return _cache;
+
+        var results = new List<Item>();
+
+        foreach (var item in _cache) {
+            if (item.name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                item.shortName.Contains(query, StringComparison.OrdinalIgnoreCase)) {
+                results.Add(item);
+            }
+        }
+
+        return results;
+    }
+
+    private static async Task EnsureCacheLoaded() {
+        if (_cache.Count > 0 && DateTime.UtcNow - _lastFetch < TimeSpan.FromMinutes(CacheDurationMinutes))
+            return;
+
+        await LoadItemsFromApi();
+    }
+
+    private static async Task LoadItemsFromApi() {
+        int retryCount = 0;
+        Exception? lastException = null;
+        const string apiUrl = "https://json.tarkov.dev/api/v2/items";
+
+        while (retryCount < MaxRetries) {
+            try {
+                Debug.WriteLine($"[ItemCache] Attempting to fetch items from API (attempt {retryCount + 1}/{MaxRetries})");
+                Debug.WriteLine($"[ItemCache] URL: {apiUrl}");
+                Debug.WriteLine($"[ItemCache] Timeout: 30 seconds, Using proxy: {_handler.UseProxy}");
+
+                var response = await _client.GetStringAsync(apiUrl);
+
+                Debug.WriteLine($"[ItemCache] Response received, size: {response.Length} bytes");
+
+                var items = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, Item>>(response);
+
+                _cache.Clear();
+                if (items != null) {
+                    _cache.AddRange(items.Values);
+                    _lastFetch = DateTime.UtcNow;
+                    Debug.WriteLine($"[ItemCache] ✓ Successfully loaded {_cache.Count} items from API");
+                    return;
+                }
+                else {
+                    Debug.WriteLine("[ItemCache] ✗ Deserialized items is null");
+                }
+            } catch (HttpRequestException ex) {
+                lastException = ex;
+                Debug.WriteLine($"[ItemCache] ✗ Network error on attempt {retryCount + 1}");
+                Debug.WriteLine($"[ItemCache] Error details: {ex.Message}");
+                if (ex.InnerException != null) {
+                    Debug.WriteLine($"[ItemCache] Inner exception: {ex.InnerException.Message}");
+                }
+                retryCount++;
+                if (retryCount < MaxRetries) {
+                    var delayMs = 1000 * retryCount;
+                    Debug.WriteLine($"[ItemCache] Retrying in {delayMs}ms...");
+                    await Task.Delay(delayMs);
+                }
+            } catch (TaskCanceledException ex) {
+                lastException = ex;
+                Debug.WriteLine($"[ItemCache] ✗ Timeout on attempt {retryCount + 1} after 30 seconds");
+                retryCount++;
+                if (retryCount < MaxRetries) {
+                    var delayMs = 1000 * retryCount;
+                    Debug.WriteLine($"[ItemCache] Retrying in {delayMs}ms...");
+                    await Task.Delay(delayMs);
+                }
+            } catch (System.Text.Json.JsonException ex) {
+                Debug.WriteLine($"[ItemCache] ✗ JSON parsing error: {ex.Message}");
+                Debug.WriteLine($"[ItemCache] Error at line {ex.LineNumber}, column {ex.BytePositionInLine}");
+                throw new InvalidOperationException("Failed to parse API response. The API format may have changed.", ex);
+            } catch (Exception ex) {
+                Debug.WriteLine($"[ItemCache] ✗ Unexpected error: {ex.GetType().Name}: {ex.Message}");
+                throw;
+            }
+        }
+
+        // If we have cached data, use it even if it's old
+        if (_cache.Count > 0) {
+            Debug.WriteLine($"[ItemCache] API failed after {MaxRetries} attempts. Using cached data ({_cache.Count} items)");
+            return;
+        }
+
+        // No cache available - throw error
+        Debug.WriteLine($"[ItemCache] ✗ Failed to load items from API and no cache available");
+        if (lastException != null) {
+            throw new InvalidOperationException(
+                "Failed to connect to Tarkov API after multiple attempts. The server may be down or you may not have internet connection. Please try again later.", 
+                lastException);
+        }
+        throw new InvalidOperationException("Unable to load items from API and no cached data available.");
+    }
+}

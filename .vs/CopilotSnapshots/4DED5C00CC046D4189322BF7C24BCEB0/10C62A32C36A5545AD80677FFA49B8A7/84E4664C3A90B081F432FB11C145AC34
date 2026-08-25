@@ -1,0 +1,85 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Net.Http;
+using System.Text.Json.Serialization;
+using System.Threading.Tasks;
+
+namespace Lootlens.Data;
+
+public static class ItemCache {
+    private static List<Item> _cache = new();
+    private static DateTime _lastFetch = DateTime.MinValue;
+    private const int CacheDurationMinutes = 60;
+
+    public class Item {
+        [JsonPropertyName("name")]
+        public string name { get; set; } = string.Empty;
+
+        [JsonPropertyName("shortName")]
+        public string shortName { get; set; } = string.Empty;
+
+        [JsonPropertyName("avg24hPrice")]
+        public long avg24hPrice { get; set; }
+
+        [JsonPropertyName("low24hPrice")]
+        public long low24hPrice { get; set; }
+
+        [JsonPropertyName("high24hPrice")]
+        public long high24hPrice { get; set; }
+
+        [JsonPropertyName("sellFor")]
+        public List<SellFor>? sellFor { get; set; }
+    }
+
+    public class SellFor {
+        [JsonPropertyName("source")]
+        public string source { get; set; } = string.Empty;
+
+        [JsonPropertyName("price")]
+        public long price { get; set; }
+    }
+
+    public static async Task<List<Item>> SearchItems(string query) {
+        await EnsureCacheLoaded();
+        
+        if (string.IsNullOrWhiteSpace(query))
+            return _cache;
+
+        var results = new List<Item>();
+        var lowerQuery = query.ToLowerInvariant();
+
+        foreach (var item in _cache) {
+            if (item.name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                item.shortName.Contains(query, StringComparison.OrdinalIgnoreCase)) {
+                results.Add(item);
+            }
+        }
+
+        return results;
+    }
+
+    private static async Task EnsureCacheLoaded() {
+        if (_cache.Count > 0 && DateTime.UtcNow - _lastFetch < TimeSpan.FromMinutes(CacheDurationMinutes))
+            return;
+
+        await LoadItemsFromApi();
+    }
+
+    private static async Task LoadItemsFromApi() {
+        try {
+            using var client = new HttpClient();
+            var response = await client.GetStringAsync("https://json.tarkov.dev/api/v2/items");
+            
+            var items = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, Item>>(response);
+            
+            _cache.Clear();
+            if (items != null) {
+                _cache.AddRange(items.Values);
+            }
+            
+            _lastFetch = DateTime.UtcNow;
+        } catch (Exception ex) {
+            throw new InvalidOperationException("Failed to load items from Tarkov API", ex);
+        }
+    }
+}
