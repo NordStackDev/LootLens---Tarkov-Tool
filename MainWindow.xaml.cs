@@ -23,6 +23,7 @@ public partial class MainWindow : Window {
     private readonly DispatcherTimer _searchDebounceTimer;
     private readonly DispatcherTimer _ocrTimer;
     private readonly OcrService _ocrService = new();
+    private readonly ItemTooltipWindow _hoverTooltip = new();
     private Settings _settings = new();
     private string _lastQuery = string.Empty;
     private string _lastRecognizedText = string.Empty;
@@ -44,7 +45,7 @@ public partial class MainWindow : Window {
         _searchDebounceTimer.Tick += SearchDebounceTimer_Tick;
 
         _ocrTimer = new DispatcherTimer {
-            Interval = TimeSpan.FromMilliseconds(500)
+            Interval = TimeSpan.FromMilliseconds(320)
         };
         _ocrTimer.Tick += OcrTimer_Tick;
 
@@ -107,6 +108,7 @@ public partial class MainWindow : Window {
         ItemCache.ApiStatusChanged -= HandleApiStatusChanged;
 
         _ocrTimer.Stop();
+        _hoverTooltip.Close();
         base.OnClosed(e);
     }
 
@@ -211,49 +213,8 @@ public partial class MainWindow : Window {
     }
 
     private void RenderResultText(ItemCache.Item item, Settings settings) {
-        ResultText.Inlines.Clear();
-
-        ResultText.Inlines.Add(new Run(item.name + Environment.NewLine) { Foreground = Brushes.White });
-
-        if (settings.ShowFleaPrice && item.avg24hPrice > 0) {
-            ResultText.Inlines.Add(new Run($"Avg {Fmt(item.avg24hPrice)} ₽") {
-                Foreground = Brushes.LimeGreen
-            });
-            ResultText.Inlines.Add(new Run(Environment.NewLine));
-        }
-
-        var traderOffers = Enumerable.Empty<ItemCache.SellFor>();
-
-        if (item.sellFor != null) {
-            traderOffers = item.sellFor
-                .Where(o => !string.Equals(o.source, "Flea Market", StringComparison.OrdinalIgnoreCase))
-                .Where(o => o.price > 0)
-                .OrderByDescending(o => o.price)
-                .Take(2);
-        }
-
-        if (settings.ShowTraderPrice) {
-            var bestOffer = traderOffers.FirstOrDefault();
-            if (bestOffer != null) {
-                ResultText.Inlines.Add(new Run($"{bestOffer.source}: {Fmt(bestOffer.price)} ₽") {
-                    Foreground = Brushes.Gold
-                });
-                ResultText.Inlines.Add(new Run(Environment.NewLine));
-            }
-        }
-
-        if (settings.ShowProfit) {
-            var bestTrader = traderOffers.FirstOrDefault();
-            if (bestTrader != null && item.avg24hPrice > 0) {
-                var profit = bestTrader.price - item.avg24hPrice;
-                ResultText.Inlines.Add(new Run($"Profit {Fmt(profit)} ₽") {
-                    Foreground = Brushes.Gold
-                });
-            }
-        }
+        ItemPresenter.RenderInlines(ResultText, item, settings);
     }
-
-    private static string Fmt(long v) => v == 0 ? "–" : v.ToString("N0");
 
     private void HeaderBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) {
         if (e.OriginalSource is DependencyObject source) {
@@ -302,14 +263,6 @@ public partial class MainWindow : Window {
         _ocrInProgress = true;
 
         try {
-<<<<<<< Updated upstream
-            var recognized = await _ocrService.RecognizeAroundCursorAsync(_settings.InventoryRegionWidth, _settings.InventoryRegionHeight);
-            if (string.IsNullOrWhiteSpace(recognized)) {
-                if (DateTime.UtcNow - _lastValidHoverAt < TimeSpan.FromMilliseconds(400))
-                    return;
-
-                SetTooltipVisible(false);
-=======
             var recognizedCandidates = await _ocrService.RecognizeCandidateLinesAroundCursorAsync(
                 _settings.InventoryRegionWidth,
                 _settings.InventoryRegionHeight);
@@ -320,66 +273,52 @@ public partial class MainWindow : Window {
             var cursorBucket = GetCursorBucket();
             var candidateSignature = BuildCandidateSignature(recognizedCandidates, cursorBucket);
             if (candidateSignature.Length == 0)
->>>>>>> Stashed changes
                 return;
-            }
 
-            if (string.Equals(recognized, _lastRecognizedText, StringComparison.OrdinalIgnoreCase)) {
-                if (_tooltipVisible) {
-                    PositionWindowNearCursor();
-                }
+            // Only skip re-matching when we already have a confirmed, visible match for this exact text.
+            if (_hoverTooltip.IsTooltipVisible && string.Equals(candidateSignature, _lastRecognizedText, StringComparison.OrdinalIgnoreCase)) {
+                _lastValidHoverAt = DateTime.UtcNow;
+                _hoverTooltip.PositionNearCursor();
                 return;
             }
 
             var primaryCandidate = recognizedCandidates[0];
 
-            if (string.Equals(candidateSignature, _lastRecognizedText, StringComparison.OrdinalIgnoreCase))
-                return;
-
-            _lastRecognizedText = candidateSignature;
-
             var item = await FindBestItemMatchFromOcrAsync(recognizedCandidates);
 
             if (item == null) {
-                if (DateTime.UtcNow - _lastValidHoverAt < TimeSpan.FromMilliseconds(400))
+                // Don't stick to a failed match's signature, so the next tick retries instead of skipping.
+                _lastRecognizedText = string.Empty;
+
+                if (DateTime.UtcNow - _lastValidHoverAt < TimeSpan.FromMilliseconds(550))
                     return;
 
-                SetTooltipVisible(false);
+                _lastRecognizedItemName = string.Empty;
+                _hoverTooltip.HideTooltip();
                 return;
             }
 
+            _lastRecognizedText = candidateSignature;
+
             if (string.Equals(item.name, _lastRecognizedItemName, StringComparison.OrdinalIgnoreCase)) {
-                PositionWindowNearCursor();
-                SetTooltipVisible(true);
+                _lastValidHoverAt = DateTime.UtcNow;
+                _hoverTooltip.PositionNearCursor();
+                _hoverTooltip.ShowTooltip();
                 return;
             }
 
             _lastRecognizedItemName = item.name;
-<<<<<<< Updated upstream
             _lastValidHoverAt = DateTime.UtcNow;
-            _lastQuery = recognized;
-            RenderResultText(item, _settings);
-            PositionWindowNearCursor();
-            SetTooltipVisible(true);
-=======
             _lastQuery = primaryCandidate;
-            ResultText.Text = FormatItem(item, _settings);
->>>>>>> Stashed changes
+            _hoverTooltip.ShowItem(item, _settings);
+            _hoverTooltip.PositionNearCursor();
         } catch (Exception ex) {
             Debug.WriteLine($"[OCR] Timer tick failed: {ex.Message}");
-            SetTooltipVisible(false);
+            _lastRecognizedText = string.Empty;
+            _hoverTooltip.HideTooltip();
         } finally {
             _ocrInProgress = false;
         }
-    }
-
-    [DllImport("user32.dll")]
-    private static extern bool GetCursorPos(out POINT lpPoint);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct POINT {
-        public int X;
-        public int Y;
     }
 
     private void SetTooltipVisible(bool visible) {
@@ -719,7 +658,7 @@ public partial class MainWindow : Window {
             return false;
 
         var normalized = NormalizeForMatch(text);
-        if (normalized.Length < 5)
+        if (normalized.Length < 3)
             return false;
 
         var tokens = normalized
@@ -729,7 +668,12 @@ public partial class MainWindow : Window {
             return true;
 
         var token = tokens[0];
-        return token.Length >= 8 && (token.Any(char.IsDigit) || token.Contains('x'));
+
+        // Short alnum codes (e.g. "6l31", "aks74u") are real item designations, not OCR noise.
+        if (token.Any(char.IsDigit) && token.Any(char.IsLetter))
+            return token.Length >= 3;
+
+        return token.Length >= 8 && token.Contains('x');
     }
 
     private static string GetCursorBucket() {

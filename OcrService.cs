@@ -56,16 +56,16 @@ public sealed class OcrService {
             var ranked = ExtractScoredLines(ocrResult, searchRect, cursor.X, cursor.Y);
 
             var focused = ranked
-                .Where(entry => entry.distanceToCursor <= 210)
-                .Where(entry => entry.deltaYFromCursor <= 70)
-                .Where(entry => entry.deltaYFromCursor >= -240)
+                .Where(entry => entry.distanceToCursor <= 150)
+                .Where(entry => entry.deltaYFromCursor <= 55)
+                .Where(entry => entry.deltaYFromCursor >= -180)
                 .ToList();
 
             if (focused.Count == 0) {
                 focused = ranked
-                    .Where(entry => entry.distanceToCursor <= 320)
-                    .Where(entry => entry.deltaYFromCursor <= 110)
-                    .Where(entry => entry.deltaYFromCursor >= -300)
+                    .Where(entry => entry.distanceToCursor <= 230)
+                    .Where(entry => entry.deltaYFromCursor <= 85)
+                    .Where(entry => entry.deltaYFromCursor >= -230)
                     .ToList();
             }
 
@@ -139,6 +139,9 @@ public sealed class OcrService {
         foreach (var line in result.Lines) {
             var normalized = NormalizeLine(line.Text);
             if (normalized.Length < 3)
+                continue;
+
+            if (IsHudOrBadgeNoise(normalized))
                 continue;
 
             var words = line.Words;
@@ -236,8 +239,8 @@ public sealed class OcrService {
     }
 
     private static Rectangle GetDynamicSearchRegionAroundCursor(POINT cursor, int regionWidth, int regionHeight) {
-        var width = Math.Clamp((int)(regionWidth * 1.8), 520, 980);
-        var height = Math.Clamp((int)(regionHeight * 1.4), 260, 620);
+        var width = Math.Clamp((int)(regionWidth * 1.4), 380, 720);
+        var height = Math.Clamp((int)(regionHeight * 1.2), 200, 460);
 
         // Bias region upward because tooltip names are usually above the cursor.
         var left = cursor.X - (width / 2);
@@ -347,12 +350,19 @@ public sealed class OcrService {
         return trimmed;
     }
 
+    // Rejects perf-overlay text (FPS/GPU/CPU/LAT) and quantity badges (e.g. "8/8") that sit near the cursor.
+    private static readonly Regex HudNoisePattern = new(
+        @"\b(fps|gpu|cpu|lat|ms)\b|%|^\d+\s*/\s*\d+$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static bool IsHudOrBadgeNoise(string line) => HudNoisePattern.IsMatch(line);
+
     private static bool IsLikelyItemNameLine(string line) {
         if (string.IsNullOrWhiteSpace(line))
             return false;
 
         var normalized = line.Trim();
-        if (normalized.Length < 3 || normalized.Length > 64)
+        if (normalized.Length < 2 || normalized.Length > 64)
             return false;
 
         if (normalized.Contains('₽'))
@@ -361,33 +371,24 @@ public sealed class OcrService {
         if (normalized.EndsWith(':'))
             return false;
 
+        var tokens = normalized
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        // Single-word OCR labels inside the stash grid are often noisy and wrong for tooltip matching.
+        if (tokens.Length == 1)
+            return IsLikelyItemToken(tokens[0]);
+
+        var longWordCount = tokens.Count(t => t.Length >= 3);
+        if (longWordCount == 0)
+            return false;
+
         var letters = normalized.Count(char.IsLetter);
         if (letters < 2)
             return false;
 
         var digits = normalized.Count(char.IsDigit);
-        if (digits > letters)
+        if (digits > letters * 2)
             return false;
-
-        var tokens = normalized
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        // Single-word OCR labels inside the stash grid are often noisy and wrong for tooltip matching.
-        if (tokens.Length == 1) {
-            var token = tokens[0];
-            if (token.Length < 8)
-                return false;
-
-            // Accept long single words only when they resemble a real item name token.
-            if (!token.Any(char.IsDigit) && !token.Contains('-'))
-                return false;
-        }
-
-        if (tokens.Length >= 2) {
-            var longWordCount = tokens.Count(t => t.Length >= 3);
-            if (longWordCount == 0)
-                return false;
-        }
 
         return true;
     }
@@ -397,7 +398,7 @@ public sealed class OcrService {
             return false;
 
         var normalized = line.Trim();
-        if (normalized.Length < 5 || normalized.Length > 72)
+        if (normalized.Length < 2 || normalized.Length > 72)
             return false;
 
         var tokens = normalized
@@ -406,9 +407,19 @@ public sealed class OcrService {
         if (tokens.Length >= 2)
             return true;
 
-        // Allow a single token only if it carries discriminative structure.
-        var token = tokens[0];
-        return token.Length >= 8 && (token.Any(char.IsDigit) || token.Contains('-') || token.Contains('x'));
+        return IsLikelyItemToken(tokens[0]);
+    }
+
+    // Short technical designations (e.g. "6L31", "AKS74U", "5.45x39") are valid item labels, not OCR noise.
+    private static bool IsLikelyItemToken(string token) {
+        if (token.Length < 2 || token.Length > 20)
+            return false;
+
+        if (token.Any(char.IsDigit) && token.Any(char.IsLetter))
+            return token.Length >= 3;
+
+        // Pure-word tokens still need to look like a real name, not menu/UI noise.
+        return token.Length >= 8 && (token.Contains('-') || token.Contains('x'));
     }
 
     private static double ScoreTooltipLine(string line) {

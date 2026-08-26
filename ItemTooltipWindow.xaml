@@ -1,0 +1,23 @@
+<Window x:Class="Lootlens.ItemTooltipWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        Focusable="False"
+        SizeToContent="WidthAndHeight"
+        ResizeMode="NoResize"
+        WindowStartupLocation="Manual"
+        IsHitTestVisible="False"
+        Visibility="Hidden"
+        Opacity="0">
+
+    <Border Background="#CC0F1620" CornerRadius="6" Padding="8,6"
+            BorderBrush="Transparent" BorderThickness="0">
+        <TextBlock x:Name="TooltipText" Foreground="#F2F5FF" FontSize="11"
+                   FontWeight="SemiBold" TextWrapping="Wrap" LineHeight="14"/>
+    </Border>
+</Window>

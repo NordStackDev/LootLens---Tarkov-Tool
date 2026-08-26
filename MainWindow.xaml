@@ -11,7 +11,8 @@
         SizeToContent="WidthAndHeight"
         ResizeMode="NoResize"
         WindowStartupLocation="Manual"
-        Opacity="0.98">
+        Opacity="0.98"
+        Visibility="Hidden">
 
     <Border Background="#CC0F1620" CornerRadius="8" Padding="8,6"
             BorderBrush="Transparent" BorderThickness="0">

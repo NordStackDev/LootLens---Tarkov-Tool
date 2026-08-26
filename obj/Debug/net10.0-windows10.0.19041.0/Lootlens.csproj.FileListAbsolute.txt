@@ -30,3 +30,5 @@ C:\Udvikling\unifiedsales\LootLens---Tarkov-Tool\artifacts\verify\Lootlens.dll
 C:\Udvikling\unifiedsales\LootLens---Tarkov-Tool\artifacts\verify\Lootlens.pdb
 C:\Udvikling\unifiedsales\LootLens---Tarkov-Tool\artifacts\verify\Microsoft.Windows.SDK.NET.dll
 C:\Udvikling\unifiedsales\LootLens---Tarkov-Tool\artifacts\verify\WinRT.Runtime.dll
+C:\Udvikling\unifiedsales\LootLens---Tarkov-Tool\obj\Debug\net10.0-windows10.0.19041.0\ItemTooltipWindow.baml
+C:\Udvikling\unifiedsales\LootLens---Tarkov-Tool\obj\Debug\net10.0-windows10.0.19041.0\ItemTooltipWindow.g.cs
